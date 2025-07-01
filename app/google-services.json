@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "1052684234391",
+    "firebase_url": "https://busapp-b2daa-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "busapp-b2daa",
+    "storage_bucket": "busapp-b2daa.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1052684234391:android:a28022c4324e33f0c843d2",
+        "android_client_info": {
+          "package_name": "com.example.busmap"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBKM0KBDPJFSFiJCKVYMMC-HnBRIGsCzz8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
