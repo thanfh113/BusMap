@@ -4,10 +4,12 @@ import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -15,7 +17,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.busmap.R
-import com.example.busmap.model.getTestBusRoutes
+import com.example.busmap.model.BusRoute
+import com.example.busmap.model.BusRouteRepository
+import com.example.busmap.model.Station
+import com.example.busmap.model.StationRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -26,6 +31,7 @@ import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.overlay.Overlay
 import org.osmdroid.views.overlay.Polyline
 import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.MapView
 
 // Data classes for search results
 data class SearchResult(
@@ -33,7 +39,9 @@ data class SearchResult(
     val address: String,
     val location: GeoPoint,
     val type: SearchResultType
-)
+) {
+    val name: String get() = displayName
+}
 
 enum class SearchResultType {
     PLACE, BUS_STATION, BUS_ROUTE, LOCATION
@@ -45,6 +53,10 @@ data class RouteSearchResult(
     val busRoutes: List<String>,
     val instructions: List<String>
 )
+
+// Repositories for data access
+private val busRouteRepository = BusRouteRepository()
+private val stationRepository = StationRepository()
 
 // Nominatim search function
 suspend fun searchLocations(
@@ -79,7 +91,6 @@ suspend fun searchLocations(
                 if (response.isSuccessful) {
                     val jsonString = response.body?.string() ?: "[]"
                     val jsonArray = org.json.JSONArray(jsonString)
-
                     val results = mutableListOf<SearchResult>()
 
                     for (i in 0 until jsonArray.length()) {
@@ -88,50 +99,77 @@ suspend fun searchLocations(
                         val lon = item.getDouble("lon")
                         val displayName = item.getString("display_name")
 
-                        // Extract address components
-                        val address = if (item.has("address")) {
-                            val addr = item.getJSONObject("address")
-                            buildString {
-                                val houseNumber = addr.optString("house_number")
-                                if (houseNumber.isNotEmpty()) append("$houseNumber ")
-
-                                val road = addr.optString("road")
-                                if (road.isNotEmpty()) append("$road, ")
-
-                                val suburb = addr.optString("suburb")
-                                if (suburb.isNotEmpty()) append("$suburb, ")
-
-                                val city = addr.optString("city")
-                                val town = addr.optString("town")
-                                val village = addr.optString("village")
-
-                                when {
-                                    city.isNotEmpty() -> append(city)
-                                    town.isNotEmpty() -> append(town)
-                                    village.isNotEmpty() -> append(village)
-                                }
-                            }.trim().removeSuffix(",")
-                        } else {
-                            displayName.split(",").take(3).joinToString(", ")
-                        }
-
-                        results.add(SearchResult(
-                            displayName = displayName.split(",").first(),
-                            address = address,
-                            location = GeoPoint(lat, lon),
-                            type = SearchResultType.PLACE
-                        ))
+                        results.add(
+                            SearchResult(
+                                displayName = displayName.split(",")[0], // Take first part
+                                address = displayName,
+                                location = GeoPoint(lat, lon),
+                                type = SearchResultType.PLACE
+                            )
+                        )
                     }
 
-                    results
+                    // Also search in local bus stations and routes
+                    val localResults = searchLocalData(query)
+                    results.addAll(localResults)
+
+                    results.take(10) // Limit results
                 } else {
-                    emptyList()
+                    // Fallback to local search only
+                    searchLocalData(query)
                 }
             }
         } catch (e: Exception) {
             println("Search error: ${e.message}")
-            emptyList()
+            // Fallback to local search
+            searchLocalData(query)
         }
+    }
+}
+
+// Search in local bus data
+private suspend fun searchLocalData(query: String): List<SearchResult> {
+    return withContext(Dispatchers.IO) {
+        val results = mutableListOf<SearchResult>()
+
+        try {
+            // Search stations
+            val stations = stationRepository.getAllStations()
+            val matchingStations = stations.filter { station ->
+                station.name.contains(query, ignoreCase = true)
+            }
+
+            results.addAll(matchingStations.map { station ->
+                SearchResult(
+                    displayName = station.name,
+                    address = "Trạm xe buýt - Tuyến: ${station.routes.joinToString(", ")}",
+                    location = station.position,
+                    type = SearchResultType.BUS_STATION
+                )
+            })
+
+            // Search bus routes
+            val busRoutes = busRouteRepository.getAllBusRoutes()
+            val matchingRoutes = busRoutes.filter { route ->
+                route.name.contains(query, ignoreCase = true) ||
+                        route.id.contains(query, ignoreCase = true) ||
+                        route.stops.any { stop -> stop.contains(query, ignoreCase = true) }
+            }
+
+            results.addAll(matchingRoutes.map { route ->
+                SearchResult(
+                    displayName = "Tuyến ${route.id} - ${route.name}",
+                    address = "Tuyến xe buýt: ${route.stops.take(3).joinToString(" → ")}...",
+                    location = route.points.firstOrNull() ?: GeoPoint(21.0285, 105.8542),
+                    type = SearchResultType.BUS_ROUTE
+                )
+            })
+
+        } catch (e: Exception) {
+            println("Local search error: ${e.message}")
+        }
+
+        results
     }
 }
 
@@ -139,7 +177,7 @@ suspend fun searchLocations(
 suspend fun findBusRoute(start: GeoPoint, end: GeoPoint): RouteSearchResult {
     return withContext(Dispatchers.IO) {
         try {
-            val busRoutes = getTestBusRoutes()
+            val busRoutes = busRouteRepository.getAllBusRoutes()
             val overlays = mutableListOf<Overlay>()
             val routeIds = mutableListOf<String>()
             val instructions = mutableListOf<String>()
@@ -147,8 +185,12 @@ suspend fun findBusRoute(start: GeoPoint, end: GeoPoint): RouteSearchResult {
 
             // Simple algorithm: find routes that pass near start and end points
             val nearbyRoutes = busRoutes.filter { route ->
-                val nearStart = route.points.any { point -> point.distanceToAsDouble(start) <= 500 }
-                val nearEnd = route.points.any { point -> point.distanceToAsDouble(end) <= 500 }
+                val nearStart = route.points.any { point ->
+                    point.distanceToAsDouble(start) <= 500.0
+                }
+                val nearEnd = route.points.any { point ->
+                    point.distanceToAsDouble(end) <= 500.0
+                }
                 nearStart && nearEnd
             }
 
@@ -157,11 +199,11 @@ suspend fun findBusRoute(start: GeoPoint, end: GeoPoint): RouteSearchResult {
                 routeIds.add(bestRoute.id)
 
                 // Find start and end indices in the route
-                val startIndex = bestRoute.points.withIndex().minByOrNull { (_, point) ->
+                val startIndex = bestRoute.points.withIndex().minByOrNull { (_, point: GeoPoint) ->
                     point.distanceToAsDouble(start)
                 }?.index ?: 0
 
-                val endIndex = bestRoute.points.withIndex().minByOrNull { (_, point) ->
+                val endIndex = bestRoute.points.withIndex().minByOrNull { (_, point: GeoPoint) ->
                     point.distanceToAsDouble(end)
                 }?.index ?: bestRoute.points.size - 1
 
@@ -216,7 +258,7 @@ suspend fun findBusRoute(start: GeoPoint, end: GeoPoint): RouteSearchResult {
 
 // Helper function to create marker
 private fun createMarker(location: GeoPoint, title: String, color: Int): Marker {
-    return Marker(null).apply {
+    return Marker(null as MapView?).apply {
         position = location
         this.title = title
         // You can customize marker appearance here
@@ -240,32 +282,29 @@ fun SearchResultItem(
         Box(
             modifier = Modifier
                 .size(40.dp)
+                .clip(CircleShape)
                 .background(
                     when (result.type) {
-                        SearchResultType.PLACE -> Color(0xFF2E8B57).copy(alpha = 0.15f)
-                        SearchResultType.BUS_STATION -> Color.Blue.copy(alpha = 0.15f)
-                        SearchResultType.BUS_ROUTE -> Color(0xFF2E8B57).copy(alpha = 0.15f)
-                        SearchResultType.LOCATION -> Color(0xFF2E8B57).copy(alpha = 0.15f)
-                    },
-                    shape = androidx.compose.foundation.shape.CircleShape
+                        SearchResultType.BUS_STATION -> Color(0xFF2E8B57).copy(alpha = 0.1f)
+                        SearchResultType.BUS_ROUTE -> Color(0xFF1E90FF).copy(alpha = 0.1f)
+                        else -> Color.Gray.copy(alpha = 0.1f)
+                    }
                 ),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 painter = painterResource(
                     id = when (result.type) {
-                        SearchResultType.PLACE -> R.drawable.ic_location32
                         SearchResultType.BUS_STATION -> R.drawable.ic_location32
                         SearchResultType.BUS_ROUTE -> R.drawable.tracuu
-                        SearchResultType.LOCATION -> R.drawable.ic_location32
+                        else -> R.drawable.search
                     }
                 ),
                 contentDescription = null,
                 tint = when (result.type) {
-                    SearchResultType.PLACE -> Color(0xFF2E8B57)
-                    SearchResultType.BUS_STATION -> Color.Blue
-                    SearchResultType.BUS_ROUTE -> Color(0xFF2E8B57)
-                    SearchResultType.LOCATION -> Color(0xFF2E8B57)
+                    SearchResultType.BUS_STATION -> Color(0xFF2E8B57)
+                    SearchResultType.BUS_ROUTE -> Color(0xFF1E90FF)
+                    else -> Color.Gray
                 },
                 modifier = Modifier.size(20.dp)
             )
@@ -293,17 +332,16 @@ fun SearchResultItem(
             // Type indicator
             Text(
                 text = when (result.type) {
-                    SearchResultType.PLACE -> "📍 Địa điểm"
-                    SearchResultType.BUS_STATION -> "🚏 Trạm xe buýt"
-                    SearchResultType.BUS_ROUTE -> "🚌 Tuyến xe"
-                    SearchResultType.LOCATION -> "📍 Vị trí"
+                    SearchResultType.BUS_STATION -> "Trạm xe buýt"
+                    SearchResultType.BUS_ROUTE -> "Tuyến xe buýt"
+                    SearchResultType.PLACE -> "Địa điểm"
+                    SearchResultType.LOCATION -> "Vị trí"
                 },
                 fontSize = 11.sp,
                 color = when (result.type) {
-                    SearchResultType.PLACE -> Color(0xFF2E8B57)
-                    SearchResultType.BUS_STATION -> Color.Blue
-                    SearchResultType.BUS_ROUTE -> Color(0xFF2E8B57)
-                    SearchResultType.LOCATION -> Color(0xFF2E8B57)
+                    SearchResultType.BUS_STATION -> Color(0xFF2E8B57)
+                    SearchResultType.BUS_ROUTE -> Color(0xFF1E90FF)
+                    else -> Color.Gray
                 },
                 maxLines = 1
             )
@@ -322,9 +360,11 @@ fun SearchResultItem(
 // Search function for stations
 suspend fun searchStations(query: String): List<SearchResult> {
     return withContext(Dispatchers.IO) {
-        getAllStations()
-            .filter { station -> station.name.contains(query, ignoreCase = true) }
-            .map { station ->
+        try {
+            val stations = stationRepository.getAllStations()
+            stations.filter { station ->
+                station.name.contains(query, ignoreCase = true)
+            }.map { station ->
                 SearchResult(
                     displayName = station.name,
                     address = "Trạm xe buýt - Tuyến: ${station.routes.joinToString(", ")}",
@@ -332,5 +372,33 @@ suspend fun searchStations(query: String): List<SearchResult> {
                     type = SearchResultType.BUS_STATION
                 )
             }
+        } catch (e: Exception) {
+            println("Station search error: ${e.message}")
+            emptyList()
+        }
+    }
+}
+
+// Search function for bus routes
+suspend fun searchBusRoutes(query: String): List<SearchResult> {
+    return withContext(Dispatchers.IO) {
+        try {
+            val busRoutes = busRouteRepository.getAllBusRoutes()
+            busRoutes.filter { route ->
+                route.name.contains(query, ignoreCase = true) ||
+                route.name.contains(query, ignoreCase = true) ||
+                        route.id.contains(query, ignoreCase = true)
+            }.map { route ->
+                SearchResult(
+                    displayName = "Tuyến ${route.id} - ${route.name}",
+                    address = "Tuyến xe buýt: ${route.stops.take(3).joinToString(" → ")}",
+                    location = route.points.firstOrNull() ?: GeoPoint(21.0285, 105.8542),
+                    type = SearchResultType.BUS_ROUTE
+                )
+            }
+        } catch (e: Exception) {
+            println("Bus route search error: ${e.message}")
+            emptyList()
+        }
     }
 }

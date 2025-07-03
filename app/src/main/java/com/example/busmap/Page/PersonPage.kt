@@ -59,7 +59,7 @@ fun PersonPage() {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Spacer(modifier = Modifier.height(70.dp))
-            
+
             // Avatar with shadow
             Box(
                 modifier = Modifier
@@ -86,7 +86,7 @@ fun PersonPage() {
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold
             )
-            
+
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = "CT060138",
@@ -94,7 +94,7 @@ fun PersonPage() {
                 fontWeight = FontWeight.Medium,
                 color = textSecondaryColor
             )
-            
+
             Spacer(modifier = Modifier.height(24.dp))
 
             // Menu Cards
@@ -108,33 +108,33 @@ fun PersonPage() {
                     title = "Thông tin cá nhân",
                     onClick = { /* TODO: Handle click */ }
                 )
-                
+
                 Spacer(modifier = Modifier.height(12.dp))
-                
+
                 ProfileMenuItem(
                     icon = R.drawable.settings,
                     title = "Cài đặt",
                     onClick = { /* TODO: Handle click */ }
                 )
-                
+
                 Spacer(modifier = Modifier.height(12.dp))
-                
+
                 ProfileMenuItem(
                     icon = R.drawable.database,
                     title = "Cập nhật dữ liệu",
                     onClick = { /* TODO: Handle click */ }
                 )
-                
+
                 Spacer(modifier = Modifier.height(12.dp))
-                
+
                 ProfileMenuItem(
                     icon = R.drawable.star,
                     title = "Đánh giá ứng dụng",
                     onClick = { /* TODO: Handle click */ }
                 )
-                
+
                 Spacer(modifier = Modifier.height(12.dp))
-                
+
                 ProfileMenuItem(
                     icon = R.drawable.info,
                     title = "Thông tin công ty",
@@ -174,9 +174,9 @@ fun ProfileMenuItem(icon: Int, title: String, onClick: () -> Unit = {}) {
                     modifier = Modifier.size(24.dp)
                 )
             }
-            
+
             Spacer(modifier = Modifier.width(20.dp))
-            
+
             // Menu item text
             Text(
                 text = title,
@@ -185,7 +185,7 @@ fun ProfileMenuItem(icon: Int, title: String, onClick: () -> Unit = {}) {
                 color = textPrimaryColor,
                 modifier = Modifier.weight(1f)
             )
-            
+
             // Navigation arrow
             Icon(
                 painter = painterResource(id = R.drawable.next),

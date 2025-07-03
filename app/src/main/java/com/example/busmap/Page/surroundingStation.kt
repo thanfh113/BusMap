@@ -28,7 +28,8 @@ import androidx.compose.ui.zIndex
 import androidx.navigation.NavController
 import com.example.busmap.R
 import com.example.busmap.rememberLocationManager
-import com.example.busmap.model.getTestBusRoutes
+import com.example.busmap.model.isStationFavorite
+import com.example.busmap.model.toggleFavoriteStation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -36,6 +37,8 @@ import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Overlay
+import com.example.busmap.model.Station
+import com.example.busmap.model.StationRepository
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -99,7 +102,7 @@ fun surroundingStation(navController: NavController) {
         }
     }
 
-    // Force update map center when location changes
+    // Trong surroundingStation() Composable, sửa LaunchedEffect
     LaunchedEffect(locationManager.location) {
         println("🗺️ Location changed in surroundingStation: ${locationManager.location}")
 
@@ -107,17 +110,12 @@ fun surroundingStation(navController: NavController) {
             println("✅ Setting map center to user location: ${locationManager.location}")
             mapCenter = locationManager.location
 
-            nearbyStations = withContext(Dispatchers.IO) {
-                getNearbyStations(locationManager.location!!, radiusMeters = 5000.0)
-            }
+            nearbyStations = getNearbyStations(locationManager.location!!, radiusMeters = 5000.0)
             println("📍 Map center set to user location: ${locationManager.location}, Nearby stations: ${nearbyStations.size}")
         } else if (mapCenter == null) {
-            // Only set default if we don't have any center yet
             println("⚠️ No user location, using default center")
             mapCenter = GeoPoint(21.0285, 105.8542)
-            nearbyStations = withContext(Dispatchers.IO) {
-                getAllStations()
-            }
+            nearbyStations = getAllStations()
             println("📍 User location unavailable, using default: $mapCenter, All stations: ${nearbyStations.size}")
         }
     }
@@ -289,9 +287,7 @@ fun surroundingStation(navController: NavController) {
 
                                             // Update nearby stations based on selected location
                                             coroutineScope.launch {
-                                                nearbyStations = withContext(Dispatchers.IO) {
-                                                    getNearbyStations(result.location, radiusMeters = 5000.0)
-                                                }
+                                                nearbyStations = getNearbyStations(result.location, radiusMeters = 5000.0)
                                             }
                                         }
                                     )
@@ -483,7 +479,7 @@ fun surroundingStation(navController: NavController) {
                                             StationItem(
                                                 station = nearbyStations[index],
                                                 onClick = {
-                                                    mapCenter = nearbyStations[index].position
+                                                    mapCenter = nearbyStations[index].position // Sử dụng .position
                                                     showStationList = false
                                                 }
                                             )
@@ -644,109 +640,69 @@ fun surroundingStation(navController: NavController) {
     }
 }
 
-data class Station(
-    val name: String,
-    val position: GeoPoint,
-    val routes: List<String>
-)
-
-fun getAllStations(): List<Station> {
-    val stationsMap = mutableMapOf<String, Station>()
-    getTestBusRoutes().forEach { route ->
-        route.stops.forEachIndexed { index, stopName ->
-            val key = "${stopName}_${route.points[index].latitude}_${route.points[index].longitude}"
-            val station = stationsMap[key] ?: Station(
-                name = stopName,
-                position = route.points[index],
-                routes = mutableListOf()
-            )
-            stationsMap[key] = station.copy(
-                routes = (station.routes + route.id).distinct()
-            )
-        }
+suspend fun getAllStations(): List<com.example.busmap.model.Station> {
+    return withContext(Dispatchers.IO) {
+        val repository = StationRepository()
+        repository.getAllStations()
     }
-    val stations = stationsMap.values.toList()
-    println("All stations retrieved: ${stations.size}")
-    return stations
 }
 
 fun GeoPoint.distanceTo(other: GeoPoint): Double {
     return this.distanceToAsDouble(other)
 }
 
-fun getNearbyStations(userLocation: GeoPoint, radiusMeters: Double = 5000.0): List<Station> {
-    val nearby = getAllStations().filter { station ->
-        station.position.distanceTo(userLocation) <= radiusMeters
+suspend fun getNearbyStations(userLocation: GeoPoint, radiusMeters: Double = 5000.0): List<com.example.busmap.model.Station> {
+    return withContext(Dispatchers.IO) {
+        val repository = StationRepository()
+        val allStations = repository.getAllStations()
+        allStations.filter { station ->
+            station.position.distanceTo(userLocation) <= radiusMeters
+        }
     }
-    println("Nearby stations filtered: ${nearby.size}")
-    return nearby
 }
 
 suspend fun createStationOverlays(mapView: MapView?, context: Context, userLocation: GeoPoint?): List<Overlay> {
     return withContext(Dispatchers.Main) {
         val overlays = mutableListOf<Overlay>()
-        if (mapView == null) {
-            println("MapView is null in createStationOverlays")
-            return@withContext overlays
-        }
+        if (mapView == null) return@withContext overlays
 
         try {
             userLocation?.let { location ->
-                try {
-                    val userMarker = Marker(mapView).apply {
-                        position = location
-                        title = "Vị trí của bạn"
+                val userMarker = Marker(mapView).apply {
+                    position = location
+                    title = "Vị trí của bạn"
+                    val drawable = context.getDrawable(R.drawable.ic_location32)
+                    icon = drawable ?: context.getDrawable(android.R.drawable.ic_menu_mylocation)
+                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                }
+                overlays.add(userMarker)
+
+                val nearbyStations = getNearbyStations(location)
+                nearbyStations.forEach { station ->
+                    val marker = Marker(mapView).apply {
+                        position = station.position // Sử dụng station.position
+                        title = station.name
+                        subDescription = "Tuyến: ${station.routes.joinToString(", ")}"
                         val drawable = context.getDrawable(R.drawable.ic_location32)
                         icon = drawable ?: context.getDrawable(android.R.drawable.ic_menu_mylocation)
                         setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                        println("User marker added at ${position.latitude},${position.longitude}")
                     }
-                    overlays.add(userMarker)
-                } catch (e: Exception) {
-                    println("Failed to create user location marker: ${e.message}")
-                }
-
-                val nearbyStations = withContext(Dispatchers.IO) {
-                    getNearbyStations(location)
-                }
-                nearbyStations.forEach { station ->
-                    try {
-                        val marker = Marker(mapView).apply {
-                            position = station.position
-                            title = station.name
-                            subDescription = "Tuyến: ${station.routes.joinToString(", ")}"
-                            val drawable = context.getDrawable(R.drawable.ic_location32)
-                            icon = drawable ?: context.getDrawable(android.R.drawable.ic_menu_mylocation)
-                            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                            println("Station marker added at ${position.latitude},${position.longitude}")
-                        }
-                        overlays.add(marker)
-                    } catch (e: Exception) {
-                        println("Failed to create station marker: ${e.message}")
-                    }
+                    overlays.add(marker)
                 }
             } ?: run {
-                val allStations = withContext(Dispatchers.IO) {
-                    getAllStations()
-                }
+                val allStations = getAllStations()
                 allStations.forEach { station ->
-                    try {
-                        val marker = Marker(mapView).apply {
-                            position = station.position
-                            title = station.name
-                            subDescription = "Tuyến: ${station.routes.joinToString(", ")}"
-                            val drawable = context.getDrawable(R.drawable.ic_location32)
-                            icon = drawable ?: context.getDrawable(android.R.drawable.ic_menu_mylocation)
-                            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                            println("Station marker added at ${position.latitude},${position.longitude}")
-                        }
-                        overlays.add(marker)
-                    } catch (e: Exception) {
-                        println("Failed to create station marker: ${e.message}")
+                    val marker = Marker(mapView).apply {
+                        position = station.position // Sử dụng station.position
+                        title = station.name
+                        subDescription = "Tuyến: ${station.routes.joinToString(", ")}"
+                        val drawable = context.getDrawable(R.drawable.ic_location32)
+                        icon = drawable ?: context.getDrawable(android.R.drawable.ic_menu_mylocation)
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                     }
+                    overlays.add(marker)
                 }
             }
-            println("Station overlays created: ${overlays.size}")
         } catch (e: Exception) {
             println("Failed to create marker: ${e.message}")
         }
@@ -755,7 +711,7 @@ suspend fun createStationOverlays(mapView: MapView?, context: Context, userLocat
 }
 
 @Composable
-fun StationItem(station: Station, onClick: () -> Unit) {
+fun StationItem(station: com.example.busmap.model.Station, onClick: () -> Unit) {
     val context = LocalContext.current
     var isFavorite by remember { mutableStateOf(isStationFavorite(context, station)) }
 

@@ -4,10 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -16,7 +14,6 @@ import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -28,6 +25,13 @@ import androidx.compose.ui.zIndex
 import androidx.navigation.NavController
 import com.example.busmap.R
 import com.example.busmap.model.BusRoute
+import com.example.busmap.model.Station  // Thêm import này
+import com.example.busmap.model.StationRepository  // Thêm import này
+import com.example.busmap.model.getFavoriteBusRoutes
+import com.example.busmap.model.getFavoriteStations
+import com.example.busmap.model.isStationFavorite
+import com.example.busmap.model.toggleFavoriteBusRoute
+import com.example.busmap.model.toggleFavoriteStation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -280,7 +284,6 @@ fun AddStationDialog(
     var isSearching by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
 
-    // Search function
     fun searchStations(query: String) {
         if (query.isBlank()) {
             searchResults = emptyList()
@@ -290,10 +293,11 @@ fun AddStationDialog(
         isSearching = true
         coroutineScope.launch {
             try {
+                val stationRepository = StationRepository() // Thêm dòng này
                 val results = withContext(Dispatchers.IO) {
-                    getAllStations().filter { station ->
+                    stationRepository.getAllStations().filter { station -> // Sửa dòng này
                         station.name.contains(query, ignoreCase = true) ||
-                        station.routes.any { route -> route.contains(query, ignoreCase = true) }
+                                station.routes.any { route -> route.contains(query, ignoreCase = true) }
                     }.take(20)
                 }
                 searchResults = results

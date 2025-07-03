@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,23 +25,24 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.navigation.NavController
-import androidx.navigation.compose.rememberNavController
 import com.example.busmap.R
 import com.example.busmap.rememberLocationManager
-import com.example.busmap.model.getTestBusRoutes
+import com.example.busmap.model.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Overlay
+import android.util.Log
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,6 +51,14 @@ fun HomePage(navController: NavController) {
     val snackbarHostState = remember { SnackbarHostState() }
     val locationManager = rememberLocationManager(snackbarHostState)
 
+    // Repositories
+    val busRouteRepository = remember { BusRouteRepository() }
+    val stationRepository = remember { StationRepository() }
+
+    // State cho data
+    var busRoutes by remember { mutableStateOf<List<BusRoute>>(emptyList()) }
+    var stations by remember { mutableStateOf<List<Station>>(emptyList()) }
+    var isLoadingData by remember { mutableStateOf(true) }
     var mapCenter by remember { mutableStateOf<GeoPoint?>(null) }
     var overlays by remember { mutableStateOf<List<Overlay>>(emptyList()) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -58,6 +68,40 @@ fun HomePage(navController: NavController) {
     val isRefreshing = remember { mutableStateOf(false) }
     val pullRefreshState = rememberPullToRefreshState()
     val coroutineScope = rememberCoroutineScope()
+
+    // Load data from Firebase
+    LaunchedEffect(Unit) {
+        coroutineScope.launch {
+            try {
+                isLoadingData = true
+                Log.d("BusMap", "Loading bus routes and stations...")
+                val busRoutesDeferred = async {
+                    withTimeoutOrNull(10000) { // Timeout 10s
+                        busRouteRepository.getAllBusRoutes()
+                    }
+                }
+                val stationsDeferred = async {
+                    withTimeoutOrNull(10000) { // Timeout 10s
+                        stationRepository.getAllStations()
+                    }
+                }
+
+                busRoutes = busRoutesDeferred.await() ?: emptyList()
+                stations = stationsDeferred.await() ?: emptyList()
+
+                Log.d("BusMap", "✅ Loaded ${busRoutes.size} bus routes and ${stations.size} stations")
+                if (stations.isEmpty()) {
+                    errorMessage = "Không tìm thấy trạm xe buýt"
+                }
+
+            } catch (e: Exception) {
+                Log.e("BusMap", "❌ Error loading data: ${e.message}")
+                errorMessage = "Lỗi khi tải dữ liệu: ${e.message}"
+            } finally {
+                isLoadingData = false
+            }
+        }
+    }
 
     // Search function
     fun performSearch(query: String) {
@@ -74,41 +118,78 @@ fun HomePage(navController: NavController) {
                 }
                 searchResults = results
                 showSearchResults = results.isNotEmpty()
+                Log.d("BusMap", "Search results: ${results.size} items")
             } catch (e: Exception) {
-                println("Search error: ${e.message}")
+                Log.e("BusMap", "Search error: ${e.message}")
                 showSearchResults = false
             }
         }
     }
 
+    // Update map center based on location
     LaunchedEffect(locationManager.location) {
         if (locationManager.location != null) {
             mapCenter = locationManager.location
-            println("Map center set to user location: ${locationManager.location}")
+            Log.d("BusMap", "Map center set to user location: ${locationManager.location}")
         } else {
             mapCenter = GeoPoint(21.0285, 105.8542)
-            println("User location unavailable, using default: $mapCenter")
+            Log.d("BusMap", "User location unavailable, using default: $mapCenter")
         }
     }
 
+    // Refresh function
     val onRefresh = {
         isRefreshing.value = true
         coroutineScope.launch {
-            delay(1000)
-            locationManager.requestLocation()
-            delay(2000) // Wait for location to be obtained
-            if (locationManager.location != null) {
-                mapCenter = locationManager.location
-            } else {
-                mapCenter = GeoPoint(21.0285, 105.8542)
+            try {
+                locationManager.requestLocation()
+                delay(1000)
+
+                val busRoutesDeferred = async {
+                    withTimeoutOrNull(10000) {
+                        busRouteRepository.getAllBusRoutes()
+                    }
+                }
+                val stationsDeferred = async {
+                    withTimeoutOrNull(10000) {
+                        stationRepository.getAllStations()
+                    }
+                }
+
+                busRoutes = busRoutesDeferred.await() ?: emptyList()
+                stations = stationsDeferred.await() ?: emptyList()
+
+                if (locationManager.location != null) {
+                    mapCenter = locationManager.location
+                } else {
+                    mapCenter = GeoPoint(21.0285, 105.8542)
+                }
+
+                Log.d("BusMap", "✅ Data refreshed: ${busRoutes.size} routes, ${stations.size} stations")
+                if (stations.isEmpty()) {
+                    errorMessage = "Không tìm thấy trạm xe buýt sau khi làm mới"
+                }
+
+            } catch (e: Exception) {
+                Log.e("BusMap", "❌ Refresh error: ${e.message}")
+                errorMessage = "Lỗi khi làm mới: ${e.message}"
+            } finally {
+                isRefreshing.value = false
             }
-            isRefreshing.value = false
         }
     }
 
-    if (mapCenter == null) {
+    // Loading state
+    if (mapCenter == null || isLoadingData) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator()
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = if (isLoadingData) "Đang tải dữ liệu..." else "Đang lấy vị trí...",
+                    fontSize = 14.sp
+                )
+            }
         }
         return
     }
@@ -199,20 +280,23 @@ fun HomePage(navController: NavController) {
                         )
                     }
                 }
+
                 item {
                     CardBox(
                         navController = navController,
                         isEnable = isEnable,
                         mapCenter = mapCenter!!,
                         userLocation = locationManager.location,
+                        busRoutes = busRoutes,
+                        stations = stations,
                         searchQuery = searchQuery,
-                        onSearchQueryChange = { query ->
+                        onSearchQueryChange = { query: String ->
                             searchQuery = query
                             performSearch(query)
                         },
                         searchResults = searchResults,
                         showSearchResults = showSearchResults,
-                        onSearchResultSelected = { result ->
+                        onSearchResultSelected = { result: SearchResult ->
                             mapCenter = result.location
                             searchQuery = result.displayName
                             showSearchResults = false
@@ -226,22 +310,27 @@ fun HomePage(navController: NavController) {
                             coroutineScope.launch {
                                 if (locationManager.location != null) {
                                     mapCenter = locationManager.location
-                                    println("Centered map to user location: ${locationManager.location}")
+                                    Log.d("BusMap", "Centered map to user location: ${locationManager.location}")
                                 } else {
                                     locationManager.requestLocation()
                                 }
                             }
                         },
-                        onMapMoved = { newCenter -> mapCenter = newCenter },
+                        onMapMoved = { newCenter: GeoPoint -> mapCenter = newCenter },
                         overlays = overlays,
-                        onOverlaysChanged = { newOverlays -> overlays = newOverlays },
-                        onError = { message -> errorMessage = message }
+                        onOverlaysChanged = { newOverlays: List<Overlay> -> overlays = newOverlays },
+                        onError = { error: String? ->
+                            errorMessage = error
+                            Log.e("BusMap", "Error in CardBox: $error")
+                        }
                     )
                 }
+
                 item {
                     Spacer(modifier = Modifier.height(8.dp))
                     IconButtons(navController)
                 }
+
                 items(40) { index ->
                     Text(
                         "Nội dung thêm $index",
@@ -278,24 +367,31 @@ fun HomePage(navController: NavController) {
         )
 
         errorMessage?.let { message ->
-            Column(
+            Box(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                    .padding(16.dp)
             ) {
-                Text(
-                    text = message,
-                    color = Color.Red,
-                    fontSize = 16.sp
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Button(
-                    onClick = { navController.navigate("home") },
-                    modifier = Modifier.padding(8.dp)
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("Thử lại")
+                    Text(
+                        text = message,
+                        color = Color.Red,
+                        fontSize = 16.sp
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = {
+                            errorMessage = null
+                            isLoadingData = true
+                            onRefresh()
+                        },
+                        modifier = Modifier.padding(8.dp)
+                    ) {
+                        Text("Thử lại")
+                    }
                 }
             }
         }
@@ -309,6 +405,8 @@ fun CardBox(
     isEnable: Boolean,
     mapCenter: GeoPoint,
     userLocation: GeoPoint?,
+    busRoutes: List<BusRoute>,
+    stations: List<Station>,
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
     searchResults: List<SearchResult>,
@@ -357,53 +455,66 @@ fun CardBox(
                 onMapRotation = 0f,
                 onMapMoved = onMapMoved,
                 overlays = overlays,
-                showZoomControls = true, // Enable zoom controls
+                showZoomControls = true,
                 onMapViewReady = { mapView: MapView? ->
                     mapViewReference = mapView
                     if (mapView != null) {
+                        Log.d("BusMap", "MapView initialized successfully")
                         coroutineScope.launch {
                             try {
                                 val allStops = withContext(Dispatchers.IO) {
-                                    getTestBusRoutes().flatMap { route ->
-                                        route.points.zip(route.stops)
-                                    }.distinctBy { (_, stopName) -> stopName }
-                                }
-                                val stopMarkers = mutableListOf<Overlay>()
-                                for ((geo, name) in allStops) {
-                                    try {
-                                        val stopIcon = context.getDrawable(R.drawable.ic_location32)
-                                        if (stopIcon != null) {
-                                            val marker = Marker(mapView).apply {
-                                                position = geo
-                                                title = name
-                                                icon = stopIcon
-                                                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                                            }
-                                            stopMarkers.add(marker)
-                                        }
-                                    } catch (e: Exception) {
-                                        println("Failed to create marker for $name: ${e.message}")
+                                    stations.map { station ->
+                                        Pair(station.position, station.name)
                                     }
                                 }
+
+                                val stopMarkers = mutableListOf<Overlay>()
+                                if (allStops.isEmpty()) {
+                                    Log.w("BusMap", "No stations available to create markers")
+                                    onError("Không có trạm xe buýt để hiển thị")
+                                } else {
+                                    for ((geoPoint, stationName) in allStops) {
+                                        try {
+                                            val stopIcon = context.getDrawable(R.drawable.ic_location32)
+                                            if (stopIcon != null) {
+                                                val marker = Marker(mapView).apply {
+                                                    position = geoPoint
+                                                    title = stationName
+                                                    icon = stopIcon
+                                                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                                                }
+                                                stopMarkers.add(marker)
+                                                Log.d("BusMap", "Created marker for $stationName at $geoPoint")
+                                            } else {
+                                                Log.w("BusMap", "Stop icon (ic_location32) not found")
+                                            }
+                                        } catch (e: Exception) {
+                                            Log.e("BusMap", "Failed to create marker for $stationName: ${e.message}")
+                                        }
+                                    }
+                                }
+
                                 withContext(Dispatchers.Main) {
                                     onOverlaysChanged(stopMarkers)
                                     onError(null)
                                     mapView.invalidate()
+                                    Log.d("BusMap", "Map invalidated with ${stopMarkers.size} markers")
                                 }
+
                             } catch (e: Exception) {
-                                println("Error creating map markers: ${e.message}")
+                                Log.e("BusMap", "Error creating map markers: ${e.message}")
                                 onError("Lỗi khi tạo điểm dừng: ${e.message}")
                             }
                         }
                     } else {
-                        println("MapView is null in onMapViewReady callback")
+                        Log.e("BusMap", "MapView is null in onMapViewReady callback")
                         onError("Không thể khởi tạo bản đồ")
                     }
                 }
             )
         }
 
-        // Enhanced search bar with autocomplete
+        // Enhanced search bar
         if (isEnable) {
             Column(
                 modifier = Modifier
@@ -411,7 +522,7 @@ fun CardBox(
                     .padding(horizontal = 16.dp)
                     .align(Alignment.TopCenter)
                     .padding(top = 120.dp)
-                    .zIndex(100f) // Very high z-index
+                    .zIndex(100f)
             ) {
                 Card(
                     shape = RoundedCornerShape(12.dp),
@@ -467,27 +578,24 @@ fun CardBox(
                     )
                 }
 
-                // Search results dropdown with highest z-index
+                // Search results dropdown
                 if (showSearchResults && searchResults.isNotEmpty()) {
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(max = 240.dp)
-                            .zIndex(101f), // Highest z-index
+                            .zIndex(101f),
                         shape = RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp),
                         colors = CardDefaults.cardColors(containerColor = Color.White),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 16.dp) // Maximum elevation
+                        elevation = CardDefaults.cardElevation(defaultElevation = 16.dp)
                     ) {
                         LazyColumn {
-                            items(searchResults.size) { index ->
-                                val result = searchResults[index]
+                            items(searchResults) { result ->
                                 SearchResultItem(
                                     result = result,
                                     onClick = { onSearchResultSelected(result) }
                                 )
-                                if (index < searchResults.size - 1) {
-                                    Divider(color = Color.Gray.copy(alpha = 0.3f))
-                                }
+                                Divider(color = Color.Gray.copy(alpha = 0.3f))
                             }
                         }
                     }
@@ -502,7 +610,7 @@ fun CardBox(
                 .align(Alignment.TopEnd)
                 .padding(16.dp)
                 .padding(top = 210.dp)
-                .zIndex(10f) // Lower than search
+                .zIndex(10f)
         )
     }
 }

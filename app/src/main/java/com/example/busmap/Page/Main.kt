@@ -57,9 +57,9 @@ fun Main(navController: NavController) {
         TabItem("Yêu thích", Icons.Default.Favorite) { FavoritePage(navController) },
         TabItem("Cá nhân", Icons.Default.Person) { PersonPage() }
     )
-    
+
     var selectedTabIndex by rememberSaveable { mutableStateOf(0) }
-    
+
     Column(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.SpaceBetween
@@ -72,7 +72,7 @@ fun Main(navController: NavController) {
         ) {
             tabs[selectedTabIndex].content(navController)
         }
-        
+
         // Bottom navigation bar
         TabRow(
             selectedTabIndex = selectedTabIndex,
@@ -123,9 +123,9 @@ private fun CustomTab(
                 tint = if (selected) activeColor else inactiveColor,
                 modifier = Modifier.size(28.dp)
             )
-            
+
             Spacer(modifier = Modifier.height(4.dp))
-            
+
             Text(
                 text = title,
                 fontSize = 13.sp,
@@ -133,10 +133,4 @@ private fun CustomTab(
             )
         }
     }
-}
-
-@Preview
-@Composable
-fun MainPreview() {
-    Main(navController = NavController(context = androidx.compose.ui.platform.LocalContext.current))
 }
