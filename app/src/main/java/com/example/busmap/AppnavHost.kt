@@ -13,6 +13,8 @@ import com.example.busmap.Page.PersonPage
 import com.example.busmap.Page.findTheWay
 import com.example.busmap.Page.selectBus
 import com.example.busmap.Page.surroundingStation
+import com.example.busmap.Page.LoginScreen
+import com.example.busmap.Page.RegisterScreen
 
 @Composable
 fun AppNavHost(
@@ -21,15 +23,26 @@ fun AppNavHost(
 ) {
     NavHost(
         navController = navController,
-        startDestination = "main",
+        startDestination = "login", // Đặt màn hình đăng nhập là mặc định
         modifier = modifier
     ) {
+        composable("login") {
+            LoginScreen(
+                onLoginSuccess = { navController.navigate("main") },
+                onNavigateRegister = { navController.navigate("register") }
+            )
+        }
+        composable("register") {
+            RegisterScreen(
+                onRegisterSuccess = { navController.popBackStack(); navController.navigate("main") }
+            )
+        }
         composable("main") { Main(navController) }
         composable("surroundingstation") { surroundingStation(navController) }
         composable("selectbus") { selectBus(navController) }
         composable("findtheway") { findTheWay(navController) }
         composable("favorite") { FavoritePage(navController) }
-        composable("person") { PersonPage() }
+        composable("person") { PersonPage(navController) }
         composable(
             route = "busroute/{routeId}",
             arguments = listOf(navArgument("routeId") { type = androidx.navigation.NavType.StringType })

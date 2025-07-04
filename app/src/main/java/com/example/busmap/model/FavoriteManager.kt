@@ -2,97 +2,62 @@ package com.example.busmap.model
 
 import android.content.Context
 
-// Bus Route Favorites
-fun isBusRouteFavorite(context: Context, routeId: String): Boolean {
-    val sharedPref = context.getSharedPreferences("favorites", Context.MODE_PRIVATE)
-    return sharedPref.getBoolean("route_$routeId", false)
+// Station Favorites sử dụng Firebase
+suspend fun isStationFavorite(context: Context, station: Station): Boolean {
+    val userRepo = UserRepository()
+    val user = userRepo.getCurrentUser()
+    if (user == null) return false
+    val userData = userRepo.getUserData(user.uid)
+    return userData?.favoriteStations?.contains(station.id) == true
 }
 
-fun toggleFavoriteBusRoute(context: Context, route: BusRoute) {
-    val sharedPref = context.getSharedPreferences("favorites", Context.MODE_PRIVATE)
-    val editor = sharedPref.edit()
-    val key = "route_${route.id}"
-    val isCurrentlyFavorite = sharedPref.getBoolean(key, false)
-
-    if (isCurrentlyFavorite) {
-        editor.remove(key)
-        editor.remove("route_data_${route.id}")
+suspend fun toggleFavoriteStation(context: Context, station: Station) {
+    val userRepo = UserRepository()
+    val user = userRepo.getCurrentUser() ?: return
+    val userData = userRepo.getUserData(user.uid)
+    if (userData != null && userData.favoriteStations.contains(station.id)) {
+        userRepo.removeFavoriteStation(user.uid, station.id)
     } else {
-        editor.putBoolean(key, true)
-        // Store route data for retrieval
-        editor.putString("route_data_${route.id}", route.name)
+        userRepo.addFavoriteStation(user.uid, station.id)
     }
-    editor.apply()
 }
 
-fun getFavoriteBusRoutes(context: Context): List<BusRoute> {
-    val sharedPref = context.getSharedPreferences("favorites", Context.MODE_PRIVATE)
-    val allPrefs = sharedPref.all
-    val favoriteRoutes = mutableListOf<BusRoute>()
-
-    for ((key, value) in allPrefs) {
-        if (key.startsWith("route_") && !key.startsWith("route_data_") && value is Boolean && value) {
-            val routeId = key.removePrefix("route_")
-            val routeName = sharedPref.getString("route_data_$routeId", "Tuyến $routeId") ?: "Tuyến $routeId"
-            favoriteRoutes.add(
-                BusRoute(
-                    id = routeId,
-                    name = routeName,
-                    stops = emptyList(),
-                    points = emptyList(),
-                    operatingHours = "5:00 - 22:00",
-                    frequency = "10-15 phút",
-                    ticketPrice = "7,000 VNĐ"
-                )
-            )
-        }
-    }
-
-    return favoriteRoutes
+suspend fun getFavoriteStations(context: Context): List<Station> {
+    val userRepo = UserRepository()
+    val user = userRepo.getCurrentUser() ?: return emptyList()
+    val userData = userRepo.getUserData(user.uid)
+    val stationRepo = StationRepository()
+    val allStations = stationRepo.getAllStations()
+    val favoriteIds = userData?.favoriteStations ?: emptyList()
+    return allStations.filter { favoriteIds.contains(it.id) }
 }
 
-// Station Favorites
-fun isStationFavorite(context: Context, station: Station): Boolean {
-    val sharedPref = context.getSharedPreferences("favorites", Context.MODE_PRIVATE)
-    return sharedPref.getBoolean("station_${station.id}", false)
+// Bus Route Favorites sử dụng Firebase
+suspend fun isBusRouteFavorite(context: Context, routeId: String): Boolean {
+    val userRepo = UserRepository()
+    val user = userRepo.getCurrentUser()
+    if (user == null) return false
+    val userData = userRepo.getUserData(user.uid)
+    return userData?.favoriteBusRoutes?.contains(routeId) == true
 }
 
-fun toggleFavoriteStation(context: Context, station: Station) {
-    val sharedPref = context.getSharedPreferences("favorites", Context.MODE_PRIVATE)
-    val editor = sharedPref.edit()
-    val key = "station_${station.id}"
-    val isCurrentlyFavorite = sharedPref.getBoolean(key, false)
-
-    if (isCurrentlyFavorite) {
-        editor.remove(key)
-        editor.remove("station_data_${station.id}")
+suspend fun toggleFavoriteBusRoute(context: Context, route: BusRoute) {
+    val userRepo = UserRepository()
+    val user = userRepo.getCurrentUser() ?: return
+    val userData = userRepo.getUserData(user.uid)
+    if (userData != null && userData.favoriteBusRoutes.contains(route.id)) {
+        userRepo.removeFavoriteBusRoute(user.uid, route.id)
     } else {
-        editor.putBoolean(key, true)
-        editor.putString("station_data_${station.id}", station.name)
+        userRepo.addFavoriteBusRoute(user.uid, route.id)
     }
-    editor.apply()
 }
 
-fun getFavoriteStations(context: Context): List<Station> {
-    val sharedPref = context.getSharedPreferences("favorites", Context.MODE_PRIVATE)
-    val allPrefs = sharedPref.all
-    val favoriteStations = mutableListOf<Station>()
-
-    for ((key, value) in allPrefs) {
-        if (key.startsWith("station_") && !key.startsWith("station_data_") && value is Boolean && value) {
-            val stationId = key.removePrefix("station_")
-            val stationName = sharedPref.getString("station_data_$stationId", "Trạm $stationId")
-                ?: "Trạm $stationId"
-            favoriteStations.add(
-                Station(
-                    id = stationId,
-                    name = stationName,
-                    position = org.osmdroid.util.GeoPoint(21.0285, 105.8542),
-                    routes = emptyList()
-                )
-            )
-        }
-    }
-
-    return favoriteStations
+suspend fun getFavoriteBusRoutes(context: Context): List<BusRoute> {
+    val userRepo = UserRepository()
+    val user = userRepo.getCurrentUser() ?: return emptyList()
+    val userData = userRepo.getUserData(user.uid)
+    val routeRepo = BusRouteRepository()
+    val allRoutes = routeRepo.getAllBusRoutes()
+    val favoriteIds = userData?.favoriteBusRoutes ?: emptyList()
+    return allRoutes.filter { favoriteIds.contains(it.id) }
 }

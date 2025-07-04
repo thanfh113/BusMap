@@ -713,7 +713,15 @@ suspend fun createStationOverlays(mapView: MapView?, context: Context, userLocat
 @Composable
 fun StationItem(station: com.example.busmap.model.Station, onClick: () -> Unit) {
     val context = LocalContext.current
-    var isFavorite by remember { mutableStateOf(isStationFavorite(context, station)) }
+    var isFavorite by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+
+    // Đảm bảo đồng bộ trạng thái favorite khi station thay đổi
+    LaunchedEffect(station.id) {
+        isFavorite = kotlinx.coroutines.withContext(Dispatchers.IO) {
+            isStationFavorite(context, station)
+        }
+    }
 
     Card(
         modifier = Modifier
@@ -745,10 +753,13 @@ fun StationItem(station: com.example.busmap.model.Station, onClick: () -> Unit) 
                     color = Color.Gray
                 )
             }
+            // Thêm icon trái tim ở đây
             IconButton(
                 onClick = {
-                    toggleFavoriteStation(context, station)
-                    isFavorite = isStationFavorite(context, station)
+                    isFavorite = !isFavorite
+                    coroutineScope.launch {
+                        toggleFavoriteStation(context, station)
+                    }
                 }
             ) {
                 Icon(

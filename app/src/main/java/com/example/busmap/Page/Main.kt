@@ -55,7 +55,7 @@ fun Main(navController: NavController) {
     val tabs = listOf(
         TabItem("Trang chủ", Icons.Default.Home) { HomePage(navController) },
         TabItem("Yêu thích", Icons.Default.Favorite) { FavoritePage(navController) },
-        TabItem("Cá nhân", Icons.Default.Person) { PersonPage() }
+        TabItem("Cá nhân", Icons.Default.Person) { PersonPage(navController) } // Sửa dòng này
     )
 
     var selectedTabIndex by rememberSaveable { mutableStateOf(0) }
