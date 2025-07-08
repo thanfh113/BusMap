@@ -47,10 +47,21 @@ fun surroundingStation(navController: NavController) {
     val snackbarHostState = remember { SnackbarHostState() }
     val locationManager = rememberLocationManager(snackbarHostState)
 
-    var mapCenter by remember { mutableStateOf<GeoPoint?>(null) }
+    // Lấy tham số lat/lon và showAllStations từ NavController (nếu có)
+    val navBackStackEntry = remember { navController.currentBackStackEntry }
+    val latArg = navBackStackEntry?.arguments?.getString("lat")?.toDoubleOrNull()
+    val lonArg = navBackStackEntry?.arguments?.getString("lon")?.toDoubleOrNull()
+    val showAllStationsArg = navBackStackEntry?.arguments?.getString("showAllStations")
+    val showAllStations = showAllStationsArg == "true"
+
+    var mapCenter by remember {
+        mutableStateOf<GeoPoint?>(
+            if (latArg != null && lonArg != null) GeoPoint(latArg, lonArg) else null
+        )
+    }
     var mapRotation by remember { mutableStateOf(0f) }
     var stationOverlays by remember { mutableStateOf<List<Overlay>>(emptyList()) }
-    var nearbyStations by remember { mutableStateOf<List<Station>>(emptyList()) }
+    var allStations by remember { mutableStateOf<List<Station>>(emptyList()) }
     var searchQuery by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
     var showSearchResults by remember { mutableStateOf(false) }
@@ -103,20 +114,21 @@ fun surroundingStation(navController: NavController) {
     }
 
     // Trong surroundingStation() Composable, sửa LaunchedEffect
-    LaunchedEffect(locationManager.location) {
-        println("🗺️ Location changed in surroundingStation: ${locationManager.location}")
-
-        if (locationManager.location != null) {
-            println("✅ Setting map center to user location: ${locationManager.location}")
+    LaunchedEffect(locationManager.location, latArg, lonArg, showAllStations) {
+        if (latArg != null && lonArg != null) {
+            mapCenter = GeoPoint(latArg, lonArg)
+            allStations = getAllStations()
+        } else if (showAllStations) {
+            allStations = getAllStations()
+            if (mapCenter == null && allStations.isNotEmpty()) {
+                mapCenter = allStations.first().position
+            }
+        } else if (locationManager.location != null) {
             mapCenter = locationManager.location
-
-            nearbyStations = getNearbyStations(locationManager.location!!, radiusMeters = 8000.0)
-            println("📍 Map center set to user location: ${locationManager.location}, Nearby stations: ${nearbyStations.size}")
+            allStations = getNearbyStations(locationManager.location!!, radiusMeters = 20000.0)
         } else if (mapCenter == null) {
-            println("⚠️ No user location, using default center")
             mapCenter = GeoPoint(21.0285, 105.8542)
-            nearbyStations = getAllStations()
-            println("📍 User location unavailable, using default: $mapCenter, All stations: ${nearbyStations.size}")
+            allStations = getAllStations()
         }
     }
 
@@ -159,19 +171,17 @@ fun surroundingStation(navController: NavController) {
                         coroutineScope.launch {
                             try {
                                 val overlays = withContext(Dispatchers.Main) {
-                                    createStationOverlays(mapView, context, locationManager.location)
+                                    // Luôn tạo overlay cho tất cả trạm nếu có lat/lon hoặc showAllStations
+                                    createStationOverlays(mapView, context, allStations)
                                 }
                                 stationOverlays = overlays
                                 mapView.invalidate()
-                                println("✅ MapView ready, overlays count: ${overlays.size}")
                             } catch (e: Exception) {
                                 errorMessage = "Lỗi khi tạo overlays: ${e.message}"
-                                println("❌ Error creating overlays: ${e.message}")
                             }
                         }
                     } else {
                         errorMessage = "Không thể khởi tạo bản đồ"
-                        println("❌ MapView is null in onMapViewReady")
                     }
                 }
             )
@@ -287,7 +297,7 @@ fun surroundingStation(navController: NavController) {
 
                                             // Update nearby stations based on selected location
                                             coroutineScope.launch {
-                                                nearbyStations = getNearbyStations(result.location, radiusMeters = 5000.0)
+                                                allStations = getNearbyStations(result.location, radiusMeters = 5000.0)
                                             }
                                         }
                                     )
@@ -428,7 +438,7 @@ fun surroundingStation(navController: NavController) {
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = "Trạm xung quanh (${nearbyStations.size})",
+                                        text = "Trạm xung quanh (${allStations.size})",
                                         fontSize = 18.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = Color(0xFF2E8B57)
@@ -448,7 +458,7 @@ fun surroundingStation(navController: NavController) {
                                 HorizontalDivider(color = Color.Gray.copy(alpha = 0.3f))
 
                                 // Station list content
-                                if (nearbyStations.isEmpty()) {
+                                if (allStations.isEmpty()) {
                                     Column(
                                         modifier = Modifier
                                             .fillMaxSize()
@@ -475,15 +485,15 @@ fun surroundingStation(navController: NavController) {
                                             .fillMaxSize()
                                             .padding(horizontal = 16.dp)
                                     ) {
-                                        items(nearbyStations.size) { index ->
+                                        items(allStations.size) { index ->
                                             StationItem(
-                                                station = nearbyStations[index],
+                                                station = allStations[index],
                                                 onClick = {
-                                                    mapCenter = nearbyStations[index].position // Sử dụng .position
+                                                    mapCenter = allStations[index].position
                                                     showStationList = false
                                                 }
                                             )
-                                            if (index < nearbyStations.size - 1) {
+                                            if (index < allStations.size - 1) {
                                                 HorizontalDivider(
                                                     color = Color.Gray.copy(alpha = 0.2f),
                                                     modifier = Modifier.padding(vertical = 4.dp)
@@ -661,47 +671,22 @@ suspend fun getNearbyStations(userLocation: GeoPoint, radiusMeters: Double = 500
     }
 }
 
-suspend fun createStationOverlays(mapView: MapView?, context: Context, userLocation: GeoPoint?): List<Overlay> {
+suspend fun createStationOverlays(mapView: MapView?, context: Context, stations: List<com.example.busmap.model.Station>): List<Overlay> {
     return withContext(Dispatchers.Main) {
         val overlays = mutableListOf<Overlay>()
         if (mapView == null) return@withContext overlays
 
         try {
-            userLocation?.let { location ->
-                val userMarker = Marker(mapView).apply {
-                    position = location
-                    title = "Vị trí của bạn"
+            stations.forEach { station ->
+                val marker = Marker(mapView).apply {
+                    position = station.position
+                    title = station.name
+                    subDescription = "Tuyến: ${station.routes.joinToString(", ")}"
                     val drawable = context.getDrawable(R.drawable.ic_location32)
                     icon = drawable ?: context.getDrawable(android.R.drawable.ic_menu_mylocation)
                     setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                 }
-                overlays.add(userMarker)
-
-                val nearbyStations = getNearbyStations(location)
-                nearbyStations.forEach { station ->
-                    val marker = Marker(mapView).apply {
-                        position = station.position // Sử dụng station.position
-                        title = station.name
-                        subDescription = "Tuyến: ${station.routes.joinToString(", ")}"
-                        val drawable = context.getDrawable(R.drawable.ic_location32)
-                        icon = drawable ?: context.getDrawable(android.R.drawable.ic_menu_mylocation)
-                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                    }
-                    overlays.add(marker)
-                }
-            } ?: run {
-                val allStations = getAllStations()
-                allStations.forEach { station ->
-                    val marker = Marker(mapView).apply {
-                        position = station.position // Sử dụng station.position
-                        title = station.name
-                        subDescription = "Tuyến: ${station.routes.joinToString(", ")}"
-                        val drawable = context.getDrawable(R.drawable.ic_location32)
-                        icon = drawable ?: context.getDrawable(android.R.drawable.ic_menu_mylocation)
-                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                    }
-                    overlays.add(marker)
-                }
+                overlays.add(marker)
             }
         } catch (e: Exception) {
             println("Failed to create marker: ${e.message}")

@@ -427,7 +427,13 @@ fun selectBus(navController: NavController) {
                                 } else {
                                     items(filteredStations) { station ->
                                         StationItemSelectable(
-                                            station = station
+                                            station = station,
+                                            onClick = {
+                                                // Chuyển sang màn hình surroundingstation và truyền vị trí trạm, hiển thị tất cả trạm
+                                                navController.navigate(
+                                                    "surroundingstation?lat=${station.position.latitude}&lon=${station.position.longitude}&showAllStations=true"
+                                                )
+                                            }
                                         )
                                     }
                                 }
@@ -574,7 +580,8 @@ fun RouteItem(
 
 @Composable
 fun StationItemSelectable(
-    station: Station
+    station: Station,
+    onClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -590,7 +597,8 @@ fun StationItemSelectable(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .clickable { onClick() },
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)

@@ -151,6 +151,7 @@ fun FavoritePage(navController: NavController) {
                 onRoutesChanged = { reloadTrigger++ }
             )
             1 -> StationsFavoriteTab(
+                navController = navController, // Pass navController here
                 favoriteStations = favoriteStations,
                 onStationsChanged = { reloadTrigger++ }
             )
@@ -256,6 +257,7 @@ fun BusRoutesFavoriteTab(
 
 @Composable
 fun StationsFavoriteTab(
+    navController: NavController, // Add navController parameter
     favoriteStations: List<Station>,
     onStationsChanged: () -> Unit
 ) {
@@ -329,7 +331,10 @@ fun StationsFavoriteTab(
                             }
                         },
                         onClick = {
-                            // Navigate to map with station centered
+                            // Navigate to map with station centered, show all stations
+                            navController.navigate(
+                                "surroundingstation?lat=${station.position.latitude}&lon=${station.position.longitude}&showAllStations=true"
+                            )
                         }
                     )
                 }
