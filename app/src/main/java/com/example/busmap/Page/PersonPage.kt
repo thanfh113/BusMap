@@ -104,7 +104,7 @@ fun PersonPage(navController: NavController) {
                         .padding(4.dp)
                 ) {
                     Image(
-                        painter = painterResource(id = R.drawable.thanhimg),
+                        painter = painterResource(id = R.drawable.bus_stop_icon),
                         contentDescription = "Avatar",
                         modifier = Modifier
                             .fillMaxSize()

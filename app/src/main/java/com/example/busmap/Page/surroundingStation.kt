@@ -110,7 +110,7 @@ fun surroundingStation(navController: NavController) {
             println("✅ Setting map center to user location: ${locationManager.location}")
             mapCenter = locationManager.location
 
-            nearbyStations = getNearbyStations(locationManager.location!!, radiusMeters = 5000.0)
+            nearbyStations = getNearbyStations(locationManager.location!!, radiusMeters = 8000.0)
             println("📍 Map center set to user location: ${locationManager.location}, Nearby stations: ${nearbyStations.size}")
         } else if (mapCenter == null) {
             println("⚠️ No user location, using default center")

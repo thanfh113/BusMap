@@ -106,18 +106,60 @@ fun findTheWay(navController: NavController) {
 
     // Route finding function
     fun findRoute() {
-        if (startLocation == null || endLocation == null) {
+        // Prevent route finding if mapView is not ready
+        if (mapView == null) {
             coroutineScope.launch {
-                snackbarHostState.showSnackbar("Vui lòng chọn điểm đi và điểm đến")
+                snackbarHostState.showSnackbar("Bản đồ chưa sẵn sàng, vui lòng đợi...")
             }
             return
+        }
+
+        // Nếu chưa chọn từ gợi ý, thử lấy vị trí đầu tiên từ searchResults nếu text trùng
+        if (startLocation == null) {
+            startSearchResults.firstOrNull { it.displayName == startPoint }?.let {
+                startLocation = it.location
+            }
+        }
+        if (endLocation == null) {
+            endSearchResults.firstOrNull { it.displayName == endPoint }?.let {
+                endLocation = it.location
+            }
+        }
+
+        // Nếu vẫn thiếu, báo lỗi
+        if (startLocation == null || endLocation == null) {
+            coroutineScope.launch {
+                snackbarHostState.showSnackbar("Vui lòng chọn điểm đi và điểm đến từ gợi ý")
+            }
+            return
+        }
+
+        // Hàm tìm trạm gần nhất
+        suspend fun getNearestStationPoint(point: GeoPoint): GeoPoint? {
+            val stations = getAllStations() // List<Station>
+            return stations.minByOrNull { it.position.distanceToAsDouble(point) }?.position
         }
 
         isSearchingRoute = true
         coroutineScope.launch {
             try {
+                var realStart = startLocation
+                var realEnd = endLocation
+
+                // Kiểm tra nếu điểm đi không phải là trạm (không khớp với bất kỳ station nào)
+                val allStations = getAllStations()
+                val isStartStation = allStations.any { it.position.latitude == realStart?.latitude && it.position.longitude == realStart?.longitude }
+                val isEndStation = allStations.any { it.position.latitude == realEnd?.latitude && it.position.longitude == realEnd?.longitude }
+
+                if (!isStartStation) {
+                    getNearestStationPoint(realStart!!)?.let { realStart = it }
+                }
+                if (!isEndStation) {
+                    getNearestStationPoint(realEnd!!)?.let { realEnd = it }
+                }
+
                 val route = withContext(Dispatchers.IO) {
-                    findBusRoute(startLocation!!, endLocation!!)
+                    findBusRoute(realStart!!, realEnd!!) // Only pass two arguments
                 }
 
                 routeOverlays = route.overlays
@@ -355,7 +397,7 @@ fun findTheWay(navController: NavController) {
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = Color(0xFF2E8B57)
                             ),
-                            enabled = !isSearchingRoute && startLocation != null && endLocation != null
+                            enabled = !isSearchingRoute && startLocation != null && endLocation != null && mapView != null // Disable if mapView is null
                         ) {
                             if (isSearchingRoute) {
                                 CircularProgressIndicator(
@@ -376,7 +418,7 @@ fun findTheWay(navController: NavController) {
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(2f),
+                        .weight(1.5f), // Giảm từ 2f xuống 1.5f
                     shape = RoundedCornerShape(0.dp)
                 ) {
                     Box(modifier = Modifier.fillMaxSize()) {
@@ -422,7 +464,7 @@ fun findTheWay(navController: NavController) {
             }
 
             // Start point search results - Floating overlay
-            if (showStartResults && startSearchResults.isNotEmpty()) {
+            if (showStartResults && startSearchResults.isNotEmpty() && startLocation == null) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -472,7 +514,7 @@ fun findTheWay(navController: NavController) {
             }
 
             // End point search results - Floating overlay
-            if (showEndResults && endSearchResults.isNotEmpty()) {
+            if (showEndResults && endSearchResults.isNotEmpty() && endLocation == null) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()

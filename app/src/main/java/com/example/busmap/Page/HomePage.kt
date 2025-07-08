@@ -330,13 +330,6 @@ fun HomePage(navController: NavController) {
                     Spacer(modifier = Modifier.height(8.dp))
                     IconButtons(navController)
                 }
-
-                items(40) { index ->
-                    Text(
-                        "Nội dung thêm $index",
-                        modifier = Modifier.padding(vertical = 8.dp)
-                    )
-                }
             }
         }
 

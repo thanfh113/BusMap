@@ -34,6 +34,7 @@ import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
 import android.util.Log
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import kotlin.math.atan2
@@ -128,8 +129,7 @@ suspend fun createRouteOverlays(
         try {
             locationManager.location?.let { location ->
                 withContext(Dispatchers.Main) {
-                    val userIcon = mapView.context.getDrawable(R.drawable.ic_location32)
-                        ?: mapView.context.getDrawable(android.R.drawable.ic_menu_mylocation)
+                    val userIcon = mapView.context.getDrawable(android.R.drawable.ic_menu_mylocation)
                     val userMarker = Marker(mapView).apply {
                         position = location
                         title = "Vị trí của bạn"
@@ -193,6 +193,7 @@ fun BusRouteScreen(routeId: String?, navController: NavController) {
     var isTracking by remember { mutableStateOf(false) }
     var currentPointIndex by remember { mutableStateOf(0) }
     var detailedPoints by remember { mutableStateOf<List<GeoPoint>>(emptyList()) }
+    var showRouteInfo by remember { mutableStateOf(false) }
 
     // Load bus route from Firebase
     LaunchedEffect(routeId) {
@@ -275,10 +276,12 @@ fun BusRouteScreen(routeId: String?, navController: NavController) {
 
         TopAppBar(
             title = {
+                val route = busRoute
                 Text(
-                    text = busRoute?.let { "Tuyến ${it.id}: ${it.name}" } ?: "Đang tải...",
+                    text = if (route != null) "Tuyến ${route.id}: ${route.name}" else "Đang tải...",
                     fontWeight = FontWeight.Bold,
-                    fontSize = 20.sp
+                    fontSize = 20.sp,
+                    color = Color.White
                 )
             },
             navigationIcon = {
@@ -287,19 +290,23 @@ fun BusRouteScreen(routeId: String?, navController: NavController) {
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = MaterialTheme.colorScheme.primary,
+                containerColor = Color(0xFF2E8B57), // Đổi màu nền sang xanh lá cây
                 titleContentColor = Color.White,
                 navigationIconContentColor = Color.White
             ),
-            modifier = Modifier.zIndex(1f)
+            modifier = Modifier
+                .zIndex(1f)
+                .padding(top = 16.dp) // Đảm bảo cùng top với nút bên phải
         )
 
-        Column(
+        // Đưa 2 nút lên sát góc phải trên cùng, padding 16.dp cho cả top và end
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(16.dp)
-                .zIndex(10f),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(top = 16.dp, end = 16.dp)
+                .zIndex(5f)
         ) {
             FloatingActionButton(
                 onClick = {
@@ -312,20 +319,23 @@ fun BusRouteScreen(routeId: String?, navController: NavController) {
                         locationManager.requestLocation()
                     }
                 },
-                modifier = Modifier.size(56.dp),
-                containerColor = MaterialTheme.colorScheme.primaryContainer
+                modifier = Modifier.size(40.dp),
+                containerColor = Color.White,
+                contentColor = Color(0xFF2E8B57),
+                elevation = FloatingActionButtonDefaults.elevation(2.dp)
             ) {
                 if (locationManager.isLoading) {
                     CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
-                        color = Color.White,
+                        modifier = Modifier.size(20.dp),
+                        color = Color(0xFF2E8B57),
                         strokeWidth = 2.dp
                     )
                 } else {
                     Icon(
                         painter = painterResource(id = R.drawable.center),
                         contentDescription = "Vị trí của tôi",
-                        tint = Color.White
+                        tint = Color.Black,
+                        modifier = Modifier.size(24.dp)
                     )
                 }
             }
@@ -334,14 +344,99 @@ fun BusRouteScreen(routeId: String?, navController: NavController) {
                     isTracking = !isTracking
                     if (isTracking) currentPointIndex = 0
                 },
-                modifier = Modifier.size(56.dp),
-                containerColor = if (isTracking) Color.Red else MaterialTheme.colorScheme.primaryContainer
+                modifier = Modifier.size(40.dp),
+                containerColor = Color.White,
+                contentColor = if (isTracking) Color.Red else Color(0xFF2E8B57),
+                elevation = FloatingActionButtonDefaults.elevation(2.dp)
             ) {
                 Icon(
                     imageVector = if (isTracking) Icons.Default.LocationOn else Icons.Default.PlayArrow,
                     contentDescription = if (isTracking) "Dừng theo dõi" else "Theo dõi tuyến đường",
-                    tint = Color.White
+                    tint = if (isTracking) Color.Red else Color(0xFF2E8B57),
+                    modifier = Modifier.size(24.dp)
                 )
+            }
+        }
+
+        // Nút show thông tin tuyến ở góc dưới phải
+        if (busRoute != null) {
+            FloatingActionButton(
+                onClick = { showRouteInfo = true },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(bottom = 24.dp, end = 20.dp)
+                    .size(48.dp),
+                containerColor = Color(0xFF2E8B57),
+                contentColor = Color.White,
+                elevation = FloatingActionButtonDefaults.elevation(4.dp)
+            ) {
+                Icon(
+                    painter = painterResource(id = R.drawable.info),
+                    contentDescription = "Thông tin tuyến",
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+        }
+
+        // Card thông tin chi tiết tuyến xe
+        if (showRouteInfo) {
+            val route = busRoute
+            if (route != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.BottomCenter)
+                        .zIndex(10f)
+                ) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(20.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "Thông tin chi tiết tuyến",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 18.sp,
+                                    color = Color(0xFF2E8B57)
+                                )
+                                IconButton(onClick = { showRouteInfo = false }) {
+                                    Icon(
+                                        painter = painterResource(id = R.drawable.back),
+                                        contentDescription = "Đóng",
+                                        tint = Color.Gray
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("Tuyến: ${route.id} - ${route.name}", fontWeight = FontWeight.Medium)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text("Thời gian hoạt động: ${route.operatingHours}")
+                            Text("Tần suất: ${route.frequency}")
+                            Text("Giá vé: ${route.ticketPrice}")
+                            Text("Đơn vị vận hành: ${route.operator}")
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Các điểm dừng:",
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFF2E8B57)
+                            )
+                            route.stops.forEachIndexed { idx, stop ->
+                                Text("${idx + 1}. $stop", fontSize = 14.sp)
+                            }
+                        }
+                    }
+                }
             }
         }
 
